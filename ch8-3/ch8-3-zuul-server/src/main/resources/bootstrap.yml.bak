@@ -1,0 +1,95 @@
+spring:
+  application:
+    name: zuul-server
+server:
+  port: 5555
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${eureka.host:127.0.0.1}:${eureka.port:8888}/eureka/
+  instance:
+    prefer-ip-address: true
+zuul:
+  routes:
+    client-a:
+      path: /client/**
+      serviceId: client-a
+  ratelimit:
+    key-prefix: springcloud-book #按粒度拆分的临时变量key前缀
+    enabled: true
+    repository: IN_MEMORY #key存储类型，默认是IN_MEMORY本地内存，此外还有多种形式
+    behind-proxy: true #表示代理之后
+    default-policy: #全局限流策略，可单独细化到服务粒度
+      limit: 2 #在一个单位时间窗口的请求数量
+      quota: 1 #在一个单位时间窗口的请求时间限制
+      refresh-interval: 3 #单位时间窗口
+      type:
+        - user #可指定用户粒度
+        - origin #可指定客户端地址粒度
+        - url #可指定url粒度
+
+
+########################################################
+# 路由配置
+########################################################
+zuul:
+  semaphore:
+    max-semaphores: 500
+  sensitiveHeaders:
+  add-host-header: true
+  max:
+    host:
+      connections: 500
+  host:
+    socket-timeout-millis: 600000
+    connect-timeout-millis: 600000
+    maxTotalConnections: 300
+    maxPerRouteConnections: 10
+  ignoredServices: '*'
+  routes:
+    ccb-server:
+      path: /ccb-server/**
+      serviceId: ccb-server
+      stripPrefix: false
+      sensitiveHeaders:
+    ccb-server1:
+      path: /ccb-server1/**
+      serviceId: ccb-server1
+      stripPrefix: false
+      sensitiveHeaders:
+  ########################################################
+  # 流控配置
+  ########################################################
+  ratelimit:
+    enabled: true
+    repository: REDIS
+    behind-proxy: true
+    deny-request:
+      response-status-code: 404
+    default-policy-list:
+      - limit: 100
+        quota: 1000
+        refresh-interval: 60
+        type:
+          - user
+          - url
+    policy-list:
+      ccb-server:
+      # ccb-service服务下每个接口独享的默认流控配置,和其他控制并行控制,每个接口30秒内允许接入500笔
+          - limit: 500
+            quota: 1000
+            refresh-interval: 30
+            type:
+              - url_pattern=/ccb-server/**
+      # 非法接入的流控配置,允许30秒内允许接入50笔,用于控制监控等非业务访问请求
+          - limit: 50
+            quota: 1000
+            refresh-interval: 30
+            type:
+              - user=anonymous
+      # 发送方节点号10000 接收方节点号20000 交易码A034102 的流控配置 30秒内允许计入5笔
+          - limit: 5
+            quota: 1000
+            refresh-interval: 30
+            type:
+              - user=10000-20000-A034102
